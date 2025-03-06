@@ -1,0 +1,10 @@
+.{
+    .fingerprint = 0xde8efae815fc7f4e,
+    .name = .zuws,
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
