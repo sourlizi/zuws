@@ -97,11 +97,12 @@ pub fn build(b: *std.Build) !void {
     zuws.addImport("uws", uWS_c.createModule());
     zuws.linkLibrary(uWebSockets);
 
-    // const emit_asm = b.step("asm", "Emit assembly file");
-    // const waf = b.addWriteFiles();
-    // waf.step.dependOn(b.getInstallStep());
-    // waf.addCopyFileToSource(exe.getEmittedAsm(), "main.asm");
-    // emit_asm.dependOn(&waf.step);
+    const asm_step = b.step("asm", "Emit assembly file");
+    const awf = b.addWriteFiles();
+    awf.step.dependOn(b.getInstallStep());
+    // Path is relative to the cache dir in which it *would've* been placed in
+    _ = awf.addCopyFile(exe.getEmittedAsm(), "../../../main.asm");
+    asm_step.dependOn(&awf.step);
 
     const check = b.step("check", "Check if zuws compiles");
     const exe_check = b.addExecutable(.{
