@@ -1,8 +1,9 @@
 const std = @import("std");
-const App = @import("./App.zig");
-const Request = @import("./Request.zig");
-const Response = @import("./Response.zig");
-const WebSocket = @import("./WebSocket.zig");
+const zuws = @import("zuws");
+const App = zuws.App;
+const Request = zuws.Request;
+const Response = zuws.Response;
+const WebSocket = zuws.WebSocket;
 
 const c = @import("uws");
 

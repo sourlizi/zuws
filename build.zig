@@ -9,6 +9,10 @@ pub fn build(b: *std.Build) !void {
 
     config_options.addOption(bool, "debug_logs", debug_logs);
 
+    var arena = std.heap.ArenaAllocator.init(b.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const uSockets = b.addLibrary(.{
         .name = "uSockets",
         .root_module = b.createModule(.{
@@ -18,29 +22,25 @@ pub fn build(b: *std.Build) !void {
     });
 
     uSockets.linkSystemLibrary("zlib");
-
     uSockets.addIncludePath(b.path("uWebSockets/uSockets/src"));
     uSockets.installHeader(b.path("uWebSockets/uSockets/src/libusockets.h"), "libusockets.h");
-
-    const uSocketsSourceFiles = &[_][]const u8{
-        "bsd.c",
-        "context.c",
-        "loop.c",
-        "quic.c",
-        "socket.c",
-        "udp.c",
-        "crypto/sni_tree.cpp",
-        "eventing/epoll_kqueue.c",
-        "eventing/gcd.c",
-        "eventing/libuv.c",
-        "io_uring/io_context.c",
-        "io_uring/io_loop.c",
-        "io_uring/io_socket.c",
-    };
-
     uSockets.addCSourceFiles(.{
         .root = b.path("uWebSockets/uSockets/src/"),
-        .files = uSocketsSourceFiles,
+        .files = &[_][]const u8{
+            "bsd.c",
+            "context.c",
+            "loop.c",
+            "quic.c",
+            "socket.c",
+            "udp.c",
+            "crypto/sni_tree.cpp",
+            "eventing/epoll_kqueue.c",
+            "eventing/gcd.c",
+            "eventing/libuv.c",
+            "io_uring/io_context.c",
+            "io_uring/io_loop.c",
+            "io_uring/io_socket.c",
+        },
         .flags = &.{"-DLIBUS_NO_SSL"},
     });
 
@@ -51,7 +51,6 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
-
     uWebSockets.linkLibCpp();
     uWebSockets.linkLibrary(uSockets);
     uWebSockets.addCSourceFiles(.{
@@ -66,52 +65,76 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-
-    const exe = b.addExecutable(.{
-        .name = "zuws",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    exe.root_module.addOptions("config", config_options);
-    exe.root_module.addImport("uws", uWS_c.createModule());
-    exe.linkLibrary(uWebSockets);
-    b.installArtifact(exe);
-
-    const run_exe = b.addRunArtifact(exe);
-    run_exe.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| {
-        run_exe.addArgs(args);
-    }
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_exe.step);
+    const uWS_c_module = uWS_c.createModule();
 
     const zuws = b.addModule("zuws", .{
-        .root_source_file = b.path("src/uws.zig"),
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     zuws.addOptions("config", config_options);
-    zuws.addImport("uws", uWS_c.createModule());
+    zuws.addImport("uws", uWS_c_module);
     zuws.linkLibrary(uWebSockets);
-
-    const asm_step = b.step("asm", "Emit assembly file");
-    const awf = b.addWriteFiles();
-    awf.step.dependOn(b.getInstallStep());
-    // Path is relative to the cache dir in which it *would've* been placed in
-    _ = awf.addCopyFile(exe.getEmittedAsm(), "../../../main.asm");
-    asm_step.dependOn(&awf.step);
-
-    const check = b.step("check", "Check if zuws compiles");
-    const exe_check = b.addExecutable(.{
+    const libzuws = b.addLibrary(.{
         .name = "zuws",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .linkage = .static,
+        .root_module = zuws,
     });
-    exe_check.root_module.addImport("uws", uWS_c.createModule());
-    exe_check.linkLibrary(uWebSockets);
-    check.dependOn(&exe_check.step);
+    b.installArtifact(libzuws);
+
+    var main_files: std.ArrayListUnmanaged(struct {
+        dir: []const u8,
+        path: []const u8,
+    }) = .empty;
+
+    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
+    var walker = try dir.walk(b.allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (entry.kind == .file and std.mem.eql(u8, entry.basename, "main.zig")) {
+            const parent_dir = std.fs.path.dirname(entry.path) orelse continue;
+
+            try main_files.append(allocator, .{
+                .dir = try b.allocator.dupe(u8, parent_dir),
+                .path = try b.allocator.dupe(u8, entry.path),
+            });
+        }
+    }
+
+    for (main_files.items) |main| {
+        const exe_name = std.fs.path.basename(main.dir);
+        const exe = b.addExecutable(.{
+            .name = exe_name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(main.path),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+
+        exe.root_module.addOptions("config", config_options);
+        exe.root_module.addImport("uws", uWS_c_module);
+        exe.root_module.addImport("zuws", zuws);
+        b.installArtifact(exe);
+
+        // Create a run step
+        const exe_install = b.addInstallArtifact(exe, .{});
+        const run_cmd = b.addRunArtifact(exe);
+        run_cmd.step.dependOn(&exe_install.step);
+
+        const run_description = try std.fmt.allocPrint(allocator, "Run the {s} example", .{exe_name});
+        const run_step = b.step(exe_name, run_description);
+        run_step.dependOn(&run_cmd.step);
+
+        const asm_description = try std.fmt.allocPrint(allocator, "Emit the {s} example ASM file", .{exe_name});
+        const asm_step_name = try std.fmt.allocPrint(allocator, "{s}-asm", .{exe_name});
+        const asm_step = b.step(asm_step_name, asm_description);
+        const awf = b.addWriteFiles();
+        awf.step.dependOn(b.getInstallStep());
+        // Path is relative to the cache dir in which it *would've* been placed in
+        _ = awf.addCopyFile(exe.getEmittedAsm(), "../../../main.asm");
+        asm_step.dependOn(&awf.step);
+    }
 }
