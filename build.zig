@@ -9,10 +9,6 @@ pub fn build(b: *std.Build) !void {
 
     config_options.addOption(bool, "debug_logs", debug_logs);
 
-    var arena = std.heap.ArenaAllocator.init(b.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
     const uSockets = b.addLibrary(.{
         .name = "uSockets",
         .root_module = b.createModule(.{
@@ -26,7 +22,7 @@ pub fn build(b: *std.Build) !void {
     uSockets.installHeader(b.path("uWebSockets/uSockets/src/libusockets.h"), "libusockets.h");
     uSockets.addCSourceFiles(.{
         .root = b.path("uWebSockets/uSockets/src/"),
-        .files = &[_][]const u8{
+        .files = &.{
             "bsd.c",
             "context.c",
             "loop.c",
@@ -60,12 +56,13 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(uWebSockets);
 
-    const uWS_c = b.addTranslateC(.{
+    const uws = b.addTranslateC(.{
         .root_source_file = b.path("bindings/uws.h"),
         .target = target,
         .optimize = optimize,
     });
-    const uWS_c_module = uWS_c.createModule();
+
+    const uws_module = uws.addModule("uws");
 
     const zuws = b.addModule("zuws", .{
         .root_source_file = b.path("src/root.zig"),
@@ -74,7 +71,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     zuws.addOptions("config", config_options);
-    zuws.addImport("uws", uWS_c_module);
+    zuws.addImport("uws", uws_module);
     zuws.linkLibrary(uWebSockets);
     const libzuws = b.addLibrary(.{
         .name = "zuws",
@@ -83,58 +80,39 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(libzuws);
 
-    var main_files: std.ArrayListUnmanaged(struct {
-        dir: []const u8,
-        path: []const u8,
-    }) = .empty;
+    const example_step = b.step("example", "Build and run an example.");
+    const example_assembly_step = b.step("example-asm", "Build and emit an example's assembly.");
 
-    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
-    var walker = try dir.walk(b.allocator);
-    defer walker.deinit();
+    if (b.args) |args| {
+        const example_name = args[0];
+        const path = try std.fmt.allocPrint(b.allocator, "examples/{s}/main.zig", .{example_name});
+        try std.fs.cwd().access(path, .{});
 
-    while (try walker.next()) |entry| {
-        if (entry.kind == .file and std.mem.eql(u8, entry.basename, "main.zig")) {
-            const parent_dir = std.fs.path.dirname(entry.path) orelse continue;
-
-            try main_files.append(allocator, .{
-                .dir = try b.allocator.dupe(u8, parent_dir),
-                .path = try b.allocator.dupe(u8, entry.path),
-            });
-        }
-    }
-
-    for (main_files.items) |main| {
-        const exe_name = std.fs.path.basename(main.dir);
         const exe = b.addExecutable(.{
-            .name = exe_name,
+            .name = example_name,
             .root_module = b.createModule(.{
-                .root_source_file = b.path(main.path),
+                .root_source_file = b.path(path),
                 .target = target,
                 .optimize = optimize,
             }),
         });
 
-        exe.root_module.addOptions("config", config_options);
-        exe.root_module.addImport("uws", uWS_c_module);
+        exe.root_module.addImport("uws", uws_module);
         exe.root_module.addImport("zuws", zuws);
         b.installArtifact(exe);
 
-        // Create a run step
-        const exe_install = b.addInstallArtifact(exe, .{});
         const run_cmd = b.addRunArtifact(exe);
-        run_cmd.step.dependOn(&exe_install.step);
+        run_cmd.step.dependOn(b.getInstallStep());
 
-        const run_description = try std.fmt.allocPrint(allocator, "Run the {s} example", .{exe_name});
-        const run_step = b.step(exe_name, run_description);
-        run_step.dependOn(&run_cmd.step);
+        example_step.dependOn(&run_cmd.step);
 
-        const asm_description = try std.fmt.allocPrint(allocator, "Emit the {s} example ASM file", .{exe_name});
-        const asm_step_name = try std.fmt.allocPrint(allocator, "{s}-asm", .{exe_name});
+        const asm_description = try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name});
+        const asm_step_name = try std.fmt.allocPrint(b.allocator, "{s}-asm", .{example_name});
         const asm_step = b.step(asm_step_name, asm_description);
-        const awf = b.addWriteFiles();
+        const awf = b.addUpdateSourceFiles();
         awf.step.dependOn(b.getInstallStep());
-        // Path is relative to the cache dir in which it *would've* been placed in
-        _ = awf.addCopyFile(exe.getEmittedAsm(), "../../../main.asm");
+        awf.addCopyFileToSource(exe.getEmittedAsm(), "main.asm");
         asm_step.dependOn(&awf.step);
+        example_assembly_step.dependOn(asm_step);
     }
 }
