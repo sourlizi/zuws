@@ -25,6 +25,6 @@
         "build.zig.zon",
         "src",
         "bindings",
-        "uWebSockets",
+        "examples",
     },
 }
