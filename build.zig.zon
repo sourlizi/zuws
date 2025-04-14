@@ -2,6 +2,24 @@
     .fingerprint = 0xde8efae815fc7f4e,
     .name = .zuws,
     .version = "0.1.0",
+    .dependencies = .{
+        .zlib = .{
+            .url = "https://github.com/allyourcodebase/zlib/archive/refs/tags/1.3.1.tar.gz",
+            .hash = "zlib-1.3.1-AAAAACEMAAA0qyoSrfgBb_p25ItL4yRf_TBRk-26TYMF",
+        },
+        .uWebSockets = .{
+            .url = "git+https://github.com/uNetworking/uWebSockets#d437169851a21785c7c3beaaeb5cb83c88665230",
+            .hash = "N-V-__8AAFWnCwCldRtOlIMRi8BbBtI0Ld6MWcuFnP7dMFeD",
+        },
+        .uSockets = .{
+            .url = "git+https://github.com/uNetworking/uSockets#182b7e4fe7211f98682772be3df89c71dc4884fa",
+            .hash = "N-V-__8AAKIGBgCLiFypEaoU5xQrAgbWVkeCaRYNcpGG7u5K",
+        },
+        .libuv = .{
+            .url = "git+https://github.com/allyourcodebase/libuv.git#fead2457be2e93c5b1383f4648c76454eacdb6dc",
+            .hash = "libuv-1.5.0-htqqv2phAADl1d0iTPAVBelr99ZHJntXVYKkVCVarY6N",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

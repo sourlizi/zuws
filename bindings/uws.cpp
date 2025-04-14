@@ -1,6 +1,6 @@
 #include "uws.h"
 
-#include "../uWebSockets/src/App.h"
+#include "App.h"
 
 #pragma region uWS-app
 

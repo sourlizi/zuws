@@ -9,6 +9,19 @@ pub fn build(b: *std.Build) !void {
 
     config_options.addOption(bool, "debug_logs", debug_logs);
 
+    const libuv_dep = b.dependency("libuv", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const zlib_dep = b.dependency("zlib", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const usockets_dep = b.dependency("uSockets", .{});
+    const uwebsockets_dep = b.dependency("uWebSockets", .{});
+
     const uSockets = b.addLibrary(.{
         .name = "uSockets",
         .root_module = b.createModule(.{
@@ -17,11 +30,12 @@ pub fn build(b: *std.Build) !void {
         }),
     });
 
-    uSockets.linkSystemLibrary("zlib");
-    uSockets.addIncludePath(b.path("uWebSockets/uSockets/src"));
-    uSockets.installHeader(b.path("uWebSockets/uSockets/src/libusockets.h"), "libusockets.h");
+    uSockets.linkLibrary(zlib_dep.artifact("z"));
+    uSockets.linkLibrary(libuv_dep.artifact("uv"));
+    uSockets.addIncludePath(usockets_dep.path("src"));
+    uSockets.installHeader(usockets_dep.path("src/libusockets.h"), "libusockets.h");
     uSockets.addCSourceFiles(.{
-        .root = b.path("uWebSockets/uSockets/src/"),
+        .root = usockets_dep.path("src"),
         .files = &.{
             "bsd.c",
             "context.c",
@@ -39,6 +53,7 @@ pub fn build(b: *std.Build) !void {
         },
         .flags = &.{"-DLIBUS_NO_SSL"},
     });
+    b.installArtifact(uSockets);
 
     const uWebSockets = b.addLibrary(.{
         .name = "uWebSockets",
@@ -47,13 +62,15 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
+    uWebSockets.installHeadersDirectory(uwebsockets_dep.path("src/"), "", .{});
     uWebSockets.linkLibCpp();
     uWebSockets.linkLibrary(uSockets);
+    uWebSockets.linkLibrary(zlib_dep.artifact("z"));
+    uWebSockets.addIncludePath(uwebsockets_dep.path("src"));
     uWebSockets.addCSourceFiles(.{
         .root = b.path("bindings/"),
         .files = &.{"uws.cpp"},
     });
-
     b.installArtifact(uWebSockets);
 
     const uws = b.addTranslateC(.{
@@ -80,39 +97,59 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(libzuws);
 
-    const example_step = b.step("example", "Build and run an example.");
-    const example_assembly_step = b.step("example-asm", "Build and emit an example's assembly.");
+    const examples: []const []const u8 = &.{
+        "hello-world",
+        "versioning",
+        "ws-server",
+    };
 
-    if (b.args) |args| {
-        const example_name = args[0];
-        const path = try std.fmt.allocPrint(b.allocator, "examples/{s}/main.zig", .{example_name});
-        try std.fs.cwd().access(path, .{});
-
-        const exe = b.addExecutable(.{
-            .name = example_name,
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(path),
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
-
-        exe.root_module.addImport("uws", uws_module);
-        exe.root_module.addImport("zuws", zuws);
-        b.installArtifact(exe);
-
-        const run_cmd = b.addRunArtifact(exe);
-        run_cmd.step.dependOn(b.getInstallStep());
-
-        example_step.dependOn(&run_cmd.step);
-
-        const asm_description = try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name});
-        const asm_step_name = try std.fmt.allocPrint(b.allocator, "{s}-asm", .{example_name});
-        const asm_step = b.step(asm_step_name, asm_description);
-        const awf = b.addUpdateSourceFiles();
-        awf.step.dependOn(b.getInstallStep());
-        awf.addCopyFileToSource(exe.getEmittedAsm(), "main.asm");
-        asm_step.dependOn(&awf.step);
-        example_assembly_step.dependOn(asm_step);
+    inline for (examples) |example_name| {
+        try addExample(b, example_name, target, optimize, uws_module, zuws);
     }
+}
+
+fn addExample(
+    b: *std.Build,
+    example_name: []const u8,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    uws_module: *std.Build.Module,
+    zuws: *std.Build.Module,
+) !void {
+    const path = try std.fmt.allocPrint(b.allocator, "examples/{s}/main.zig", .{example_name});
+    try std.fs.cwd().access(path, .{});
+
+    const exe = b.addExecutable(.{
+        .name = example_name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(path),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    exe.root_module.addImport("uws", uws_module);
+    exe.root_module.addImport("zuws", zuws);
+
+    const run_cmd = b.addRunArtifact(exe);
+
+    const example_step = b.step(
+        try std.fmt.allocPrint(b.allocator, "example-{s}", .{example_name}),
+        try std.fmt.allocPrint(b.allocator, "Run the {s} example", .{example_name}),
+    );
+    example_step.dependOn(&run_cmd.step);
+
+    const example_assembly_step = b.step(
+        try std.fmt.allocPrint(b.allocator, "example-{s}-asm", .{example_name}),
+        try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name}),
+    );
+
+    const asm_description = try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name});
+    const asm_step_name = try std.fmt.allocPrint(b.allocator, "{s}-asm", .{example_name});
+    const asm_step = b.step(asm_step_name, asm_description);
+    const awf = b.addUpdateSourceFiles();
+    awf.step.dependOn(b.getInstallStep());
+    awf.addCopyFileToSource(exe.getEmittedAsm(), "main.asm");
+    asm_step.dependOn(&awf.step);
+    example_assembly_step.dependOn(asm_step);
 }
