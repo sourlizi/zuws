@@ -117,7 +117,6 @@ fn addExample(
     zuws: *std.Build.Module,
 ) !void {
     const path = try std.fmt.allocPrint(b.allocator, "examples/{s}/main.zig", .{example_name});
-    try std.fs.cwd().access(path, .{});
 
     const exe = b.addExecutable(.{
         .name = example_name,
