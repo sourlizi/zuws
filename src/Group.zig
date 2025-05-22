@@ -59,6 +59,13 @@ pub const ComptimeGroup = struct {
         }
     }
 
+    pub inline fn toConst(comptime self: *const ComptimeGroup) ComptimeGroup {
+        return .{
+            .base_path = self.base_path,
+            .list = self.list,
+        };
+    }
+
     fn CreateGroupFn(comptime method: App.Method) fn (self: *const ComptimeGroup, comptime pattern: [:0]const u8, handler: App.MethodHandler) callconv(.Inline) *const ComptimeGroup {
         return struct {
             inline fn temp(self: *const ComptimeGroup, comptime pattern: [:0]const u8, handler: App.MethodHandler) *const ComptimeGroup {
