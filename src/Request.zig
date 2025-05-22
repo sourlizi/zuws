@@ -34,15 +34,15 @@ pub fn getCaseSensitiveMethod(res: *const Request) []const u8 {
     return temp[0..len];
 }
 
-pub fn getHeader(res: *const Request, lowerCaseHeader: [:0]const u8) []const u8 {
+pub fn getHeader(res: *const Request, lowerCaseHeader: []const u8) []const u8 {
     var temp: [*c]const u8 = undefined;
-    const len = c.uws_req_get_header(res.ptr, lowerCaseHeader, lowerCaseHeader.len, &temp);
+    const len = c.uws_req_get_header(res.ptr, lowerCaseHeader.ptr, lowerCaseHeader.len, &temp);
     return temp[0..len];
 }
 
-pub fn getQueryParam(res: *const Request, name: [:0]const u8) []const u8 {
+pub fn getQueryParam(res: *const Request, name: []const u8) []const u8 {
     var temp: [*c]const u8 = undefined;
-    const len = c.uws_req_get_query(res.ptr, name, name.len, &temp);
+    const len = c.uws_req_get_query(res.ptr, name.ptr, name.len, &temp);
     return temp[0..len];
 }
 

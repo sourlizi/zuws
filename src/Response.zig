@@ -9,8 +9,8 @@ pub fn close(res: *const Response) void {
     c.uws_res_close(res.ptr);
 }
 
-pub fn end(res: *const Response, data: [:0]const u8, close_connection: bool) void {
-    c.uws_res_end(res.ptr, data, data.len, close_connection);
+pub fn end(res: *const Response, data: []const u8, close_connection: bool) void {
+    c.uws_res_end(res.ptr, data.ptr, data.len, close_connection);
 }
 
 pub fn cork(res: *const Response, callback: fn (Response) void) void {
@@ -34,24 +34,24 @@ pub fn writeContinue(res: *const Response) void {
     c.uws_res_write_continue(res.ptr);
 }
 
-pub fn writeStatus(res: *const Response, status: [:0]const u8) void {
-    c.uws_res_write_status(res.ptr, status, status.len);
+pub fn writeStatus(res: *const Response, status: []const u8) void {
+    c.uws_res_write_status(res.ptr, status.ptr, status.len);
 }
 
-pub fn writeHeader(res: *const Response, key: [:0]const u8, value: [:0]const u8) void {
-    c.uws_res_write_header(res.ptr, key, key.len, value, value.len);
+pub fn writeHeader(res: *const Response, key: []const u8, value: [:0]const u8) void {
+    c.uws_res_write_header(res.ptr, key.ptr, key.len, value, value.len);
 }
 
-pub fn writeHeaderInt(res: *const Response, key: [:0]const u8, value: u64) void {
-    c.uws_res_write_header_int(res.ptr, key, key.len, value);
+pub fn writeHeaderInt(res: *const Response, key: []const u8, value: u64) void {
+    c.uws_res_write_header_int(res.ptr, key.ptr, key.len, value);
 }
 
 pub fn endWithoutBody(res: *const Response, close_connection: bool) void {
     c.uws_res_end_without_body(res.ptr, close_connection);
 }
 
-pub fn write(res: *const Response, data: [:0]const u8) bool {
-    return c.uws_res_write(res.ptr, data, data.len);
+pub fn write(res: *const Response, data: []const u8) bool {
+    return c.uws_res_write(res.ptr, data.ptr, data.len);
 }
 
 pub fn overrideWriteOffset(res: *const Response, offset: u64) void {
@@ -100,8 +100,8 @@ pub fn upgrade(
     );
 }
 
-pub fn tryEnd(res: *const Response, data: [:0]const u8, totalSize: u64, close_connection: bool) c.uws_try_end_result_t {
-    return c.uws_res_try_end(res.ptr, data, data.len, totalSize, close_connection);
+pub fn tryEnd(res: *const Response, data: []const u8, totalSize: u64, close_connection: bool) c.uws_try_end_result_t {
+    return c.uws_res_try_end(res.ptr, data.ptr, data.len, totalSize, close_connection);
 }
 
 pub fn getWriteOffset(res: *const Response) u64 {
