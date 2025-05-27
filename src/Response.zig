@@ -13,10 +13,10 @@ pub fn close(res: *const Response) void {
     }
 }
 
-pub fn end(res: *const Response, data: [:0]const u8, close_connection: bool) void {
+pub fn end(res: *const Response, data: []const u8, close_connection: bool) void {
     switch (res.ssl) {
-        .ssl => c.uws_res_end_ssl(res.ptr, data, data.len, close_connection),
-        .none => c.uws_res_end(res.ptr, data, data.len, close_connection),
+        .ssl => c.uws_res_end_ssl(res.ptr, data.ptr, data.len, close_connection),
+        .none => c.uws_res_end(res.ptr, data.ptr, data.len, close_connection),
     }
 }
 
@@ -53,21 +53,21 @@ pub fn writeContinue(res: *const Response) void {
     }
 }
 
-pub fn writeStatus(res: *const Response, status: [:0]const u8) void {
+pub fn writeStatus(res: *const Response, status: []const u8) void {
     switch (res.ssl) {
         .ssl => c.uws_res_write_status_ssl(res.ptr, status, status.len),
         .none => c.uws_res_write_status(res.ptr, status, status.len),
     }
 }
 
-pub fn writeHeader(res: *const Response, key: [:0]const u8, value: [:0]const u8) void {
+pub fn writeHeader(res: *const Response, key: []const u8, value: []const u8) void {
     switch (res.ssl) {
         .ssl => c.uws_res_write_header_ssl(res.ptr, key, key.len, value, value.len),
         .none => c.uws_res_write_header(res.ptr, key, key.len, value, value.len),
     }
 }
 
-pub fn writeHeaderInt(res: *const Response, key: [:0]const u8, value: u64) void {
+pub fn writeHeaderInt(res: *const Response, key: []const u8, value: u64) void {
     switch (res.ssl) {
         .ssl => c.uws_res_write_header_int_ssl(res.ptr, key, key.len, value),
         .none => c.uws_res_write_header_int(res.ptr, key, key.len, value),
@@ -81,7 +81,7 @@ pub fn endWithoutBody(res: *const Response, close_connection: bool) void {
     }
 }
 
-pub fn write(res: *const Response, data: [:0]const u8) bool {
+pub fn write(res: *const Response, data: []const u8) bool {
     return switch (res.ssl) {
         .ssl => c.uws_res_write_ssl(res.ptr, data, data.len),
         .none => c.uws_res_write(res.ptr, data, data.len),
@@ -162,7 +162,7 @@ pub fn upgrade(
     }
 }
 
-pub fn tryEnd(res: *const Response, data: [:0]const u8, totalSize: u64, close_connection: bool) c.uws_try_end_result_t {
+pub fn tryEnd(res: *const Response, data: []const u8, totalSize: u64, close_connection: bool) c.uws_try_end_result_t {
     return switch (res.ssl) {
         .ssl => c.uws_res_try_end_ssl(res.ptr, data, data.len, totalSize, close_connection),
         .none => c.uws_res_try_end(res.ptr, data, data.len, totalSize, close_connection),

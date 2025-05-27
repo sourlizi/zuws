@@ -120,6 +120,7 @@ pub fn build(b: *std.Build) !void {
 
     const examples: []const []const u8 = &.{
         "hello-world",
+        "hello-world-ssl",
         "versioning",
         "ws-server",
     };
@@ -164,7 +165,6 @@ fn addExample(
         try std.fmt.allocPrint(b.allocator, "example-{s}-asm", .{example_name}),
         try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name}),
     );
-    b.installArtifact(exe);
 
     const asm_description = try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name});
     const asm_step_name = try std.fmt.allocPrint(b.allocator, "{s}-asm", .{example_name});
