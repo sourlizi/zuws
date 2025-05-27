@@ -19,6 +19,17 @@ extern "C"
     struct uws_websocket_s;
     typedef struct uws_websocket_s uws_websocket_t;
 
+    struct ssl_options_t
+    {
+        const char *key_file_name;
+        const char *cert_file_name;
+        const char *passphrase;
+        const char *dh_params_file_name;
+        const char *ca_file_name;
+        const char *ssl_ciphers;
+        int ssl_prefer_low_memory_usage; /* Todo: rename to prefer_low_memory_usage and apply for TCP as well */
+    };
+
     typedef struct
     {
         int port;
@@ -75,8 +86,9 @@ extern "C"
     METHOD(trace)    \
     METHOD(any)
 
-#define METHOD(name) \
-    void uws_app_##name(uws_app_t *app, const char *pattern, uws_method_handler handler);
+#define METHOD(name)                                                                      \
+    void uws_app_##name(uws_app_t *app, const char *pattern, uws_method_handler handler); \
+    void uws_app_##name##_ssl(uws_app_t *app, const char *pattern, uws_method_handler handler);
     HTTP_METHODS
 #undef METHOD
 
@@ -85,6 +97,12 @@ extern "C"
     void uws_app_run(uws_app_t *app);
     void uws_app_listen(uws_app_t *app, int port, uws_listen_handler handler);
     void uws_app_close(uws_app_t *app);
+
+    uws_app_t *uws_create_app_ssl(struct ssl_options_t options);
+    void uws_app_destroy_ssl(uws_app_t *app);
+    void uws_app_run_ssl(uws_app_t *app);
+    void uws_app_listen_ssl(uws_app_t *app, int port, uws_listen_handler handler);
+    void uws_app_close_ssl(uws_app_t *app);
 
 #pragma endregion
 #pragma region uWs-Response
@@ -117,10 +135,33 @@ extern "C"
     void uws_res_on_data(uws_res_t *res, uws_res_on_data_handler handler);
     void uws_res_upgrade(uws_res_t *res, void *data, const char *sec_web_socket_key, size_t sec_web_socket_key_length, const char *sec_web_socket_protocol, size_t sec_web_socket_protocol_length, const char *sec_web_socket_extensions, size_t sec_web_socket_extensions_length, uws_socket_context_t *ws);
 
+    void uws_res_close_ssl(uws_res_t *res);
+    void uws_res_end_ssl(uws_res_t *res, const char *data, size_t length, bool close_connection);
+    void uws_res_cork_ssl(uws_res_t *res, void (*callback)(uws_res_t *res));
+    void uws_res_pause_ssl(uws_res_t *res);
+    void uws_res_resume_ssl(uws_res_t *res);
+    void uws_res_write_continue_ssl(uws_res_t *res);
+    void uws_res_write_status_ssl(uws_res_t *res, const char *status, size_t length);
+    void uws_res_write_header_ssl(uws_res_t *res, const char *key, size_t key_length, const char *value, size_t value_length);
+    void uws_res_write_header_int_ssl(uws_res_t *res, const char *key, size_t key_length, uint64_t value);
+    void uws_res_end_without_body_ssl(uws_res_t *res, bool close_connection);
+    bool uws_res_write_ssl(uws_res_t *res, const char *data, size_t length);
+    void uws_res_override_write_offset_ssl(uws_res_t *res, uintmax_t offset);
+    bool uws_res_has_responded_ssl(uws_res_t *res);
+    void uws_res_on_writable_ssl(uws_res_t *res, uws_res_on_writable_handler handler);
+    void uws_res_on_aborted_ssl(uws_res_t *res, uws_res_on_aborted_handler handler);
+    void uws_res_on_data_ssl(uws_res_t *res, uws_res_on_data_handler handler);
+    void uws_res_upgrade_ssl(uws_res_t *res, void *data, const char *sec_web_socket_key, size_t sec_web_socket_key_length, const char *sec_web_socket_protocol, size_t sec_web_socket_protocol_length, const char *sec_web_socket_extensions, size_t sec_web_socket_extensions_length, uws_socket_context_t *ws);
+
     uws_try_end_result_t uws_res_try_end(uws_res_t *res, const char *data, size_t length, uintmax_t total_size, bool close_connection);
     uintmax_t uws_res_get_write_offset(uws_res_t *res);
     size_t uws_res_get_remote_address(uws_res_t *res, const char **dest);
     size_t uws_res_get_remote_address_as_text(uws_res_t *res, const char **dest);
+
+    uws_try_end_result_t uws_res_try_end_ssl(uws_res_t *res, const char *data, size_t length, uintmax_t total_size, bool close_connection);
+    uintmax_t uws_res_get_write_offset_ssl(uws_res_t *res);
+    size_t uws_res_get_remote_address_ssl(uws_res_t *res, const char **dest);
+    size_t uws_res_get_remote_address_as_text_ssl(uws_res_t *res, const char **dest);
 
 #pragma endregion
 #pragma region uWS-Request
@@ -210,6 +251,26 @@ extern "C"
     unsigned int uws_ws_get_buffered_amount(uws_websocket_t *ws);
     size_t uws_ws_get_remote_address(uws_websocket_t *ws, const char **dest);
     size_t uws_ws_get_remote_address_as_text(uws_websocket_t *ws, const char **dest);
+
+    void uws_ws_ssl(uws_app_t *app, const char *pattern, uws_socket_behavior_t behavior);
+    void uws_ws_close_ssl(uws_websocket_t *ws);
+    uws_sendstatus_t uws_ws_send_ssl(uws_websocket_t *ws, const char *message, size_t length, uws_opcode_t opcode);
+    uws_sendstatus_t uws_ws_send_with_options_ssl(uws_websocket_t *ws, const char *message, size_t length, uws_opcode_t opcode, bool compress, bool fin);
+    uws_sendstatus_t uws_ws_send_fragment_ssl(uws_websocket_t *ws, const char *message, size_t length, bool compress);
+    uws_sendstatus_t uws_ws_send_first_fragment_ssl(uws_websocket_t *ws, const char *message, size_t length, bool compress);
+    uws_sendstatus_t uws_ws_send_first_fragment_with_opcode_ssl(uws_websocket_t *ws, const char *message, size_t length, uws_opcode_t opcode, bool compress);
+    uws_sendstatus_t uws_ws_send_last_fragment_ssl(uws_websocket_t *ws, const char *message, size_t length, bool compress);
+    void uws_ws_end_ssl(uws_websocket_t *ws, int code, const char *message, size_t length);
+    void uws_ws_cork_ssl(uws_websocket_t *ws, void (*handler)());
+    bool uws_ws_subscribe_ssl(uws_websocket_t *ws, const char *topic, size_t length);
+    bool uws_ws_unsubscribe_ssl(uws_websocket_t *ws, const char *topic, size_t length);
+    bool uws_ws_is_subscribed_ssl(uws_websocket_t *ws, const char *topic, size_t length);
+    void uws_ws_iterate_topics_ssl(uws_websocket_t *ws, void (*callback)(const char *topic, size_t length));
+    bool uws_ws_publish_ssl(uws_websocket_t *ws, const char *topic, size_t topic_length, const char *message, size_t message_length);
+    bool uws_ws_publish_with_options_ssl(uws_websocket_t *ws, const char *topic, size_t topic_length, const char *message, size_t message_length, uws_opcode_t opcode, bool compress);
+    unsigned int uws_ws_get_buffered_amount_ssl(uws_websocket_t *ws);
+    size_t uws_ws_get_remote_address_ssl(uws_websocket_t *ws, const char **dest);
+    size_t uws_ws_get_remote_address_as_text_ssl(uws_websocket_t *ws, const char **dest);
 
 #pragma endregion
 

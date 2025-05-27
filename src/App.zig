@@ -5,14 +5,19 @@ const Request = @import("./Request.zig");
 const Response = @import("./Response.zig");
 const WebSocket = @import("./WebSocket.zig");
 
+const Socket = @import("./root.zig").Socket;
+const SSL = @import("root.zig").SSL;
+
 pub const Group = @import("./Group.zig");
 const info = std.log.scoped(.uws_debug).info;
 
 const App = @This();
 
+pub const ListenHandler = *const fn (socket: *Socket) callconv(.c) void;
 pub const MethodHandler = *const fn (*Response, *Request) void;
 
 ptr: *c.uws_app_s,
+ssl: SSL = .none,
 
 pub const Method = enum {
     GET,
@@ -28,29 +33,72 @@ pub const Method = enum {
     ANY,
 };
 
+pub const SocketOptions = struct {
+    key_file_name: ?[:0]const u8 = null,
+    cert_file_name: ?[:0]const u8 = null,
+    passphrase: ?[:0]const u8 = null,
+    dh_params_file_name: ?[:0]const u8 = null,
+    ca_file_name: ?[:0]const u8 = null,
+    ssl_ciphers: ?[:0]const u8 = null,
+    ssl_prefer_low_memory_usage: bool = false,
+
+    pub fn toC(self: SocketOptions) c.ssl_options_t {
+        return .{
+            .key_file_name = if (self.key_file_name) |slice| slice.ptr else null,
+            .cert_file_name = if (self.cert_file_name) |slice| slice.ptr else null,
+            .passphrase = if (self.passphrase) |slice| slice.ptr else null,
+            .dh_params_file_name = if (self.dh_params_file_name) |slice| slice.ptr else null,
+            .ca_file_name = if (self.ca_file_name) |slice| slice.ptr else null,
+            .ssl_ciphers = if (self.ssl_ciphers) |slice| slice.ptr else null,
+            .ssl_prefer_low_memory_usage = @intFromBool(self.ssl_prefer_low_memory_usage),
+        };
+    }
+};
+
 pub fn init() !App {
     const app = c.uws_create_app();
-    if (app) |ptr| return .{ .ptr = ptr };
+    if (app) |ptr| return .{ .ptr = ptr, .ssl = .none };
+    return error.CouldNotCreateApp;
+}
+
+pub fn initSSL(opt: SocketOptions) !App {
+    const app = c.uws_create_app_ssl(opt.toC());
+    if (app) |ptr| return .{ .ptr = ptr, .ssl = .ssl };
     return error.CouldNotCreateApp;
 }
 
 pub fn deinit(app: *const App) void {
-    c.uws_app_destroy(app.ptr);
+    // c.uws_app_destroy(app.ptr);
+    switch (app.ssl) {
+        .ssl => c.uws_app_destroy_ssl(app.ptr),
+        .none => c.uws_app_destroy(app.ptr),
+    }
 }
 
 /// This also calls `run` and starts the app
-pub fn listen(app: *const App, port: u16, handler: c.uws_listen_handler) !void {
+pub fn listen(app: *const App, port: u16, handler: ?ListenHandler) !void {
     const addr = try std.net.Address.parseIp4("127.0.0.1", port);
     const sock_fd = try std.posix.socket(addr.any.family, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, std.posix.IPPROTO.TCP);
     try std.posix.bind(sock_fd, &addr.any, addr.getOsSockLen());
     std.posix.close(sock_fd);
 
-    c.uws_app_listen(app.ptr, port, handler);
-    c.uws_app_run(app.ptr);
+    switch (app.ssl) {
+        .ssl => {
+            c.uws_app_listen_ssl(app.ptr, port, @ptrCast(handler));
+            c.uws_app_run_ssl(app.ptr);
+        },
+        .none => {
+            c.uws_app_listen(app.ptr, port, @ptrCast(handler));
+            c.uws_app_run(app.ptr);
+        },
+    }
 }
 
 pub fn close(app: *const App) void {
-    c.uws_app_close(app.ptr);
+    switch (app.ssl) {
+        .ssl => c.uws_app_close_ssl(app.ptr),
+        .none => c.uws_app_close(app.ptr),
+    }
 }
 
 pub const get = CreateMethodFn("get", true).f;
@@ -126,24 +174,63 @@ pub fn ws(app: *const App, pattern: [:0]const u8, comptime behavior: WebSocketBe
         .maxLifetime = behavior.maxLifetime,
     };
 
-    if (behavior.upgrade) |f| b.upgrade = upgradeWrapper(f);
-    if (behavior.open) |f| b.open = openWrapper(f);
-    if (behavior.message) |f| b.message = messageWrapper(f);
-    if (behavior.dropped) |f| b.dropped = messageWrapper(f);
-    if (behavior.drain) |f| b.drain = drainWrapper(f);
-    if (behavior.ping) |f| b.ping = pingWrapper(f);
-    if (behavior.pong) |f| b.pong = pingWrapper(f);
-    if (behavior.close) |f| b.close = closeWrapper(f);
-    if (behavior.subscription) |f| b.subscription = subscriptionWrapper(f);
+    if (behavior.upgrade) |f| {
+        b.upgrade = switch (app.ssl) {
+            inline else => |ssl| upgradeWrapper(ssl, f),
+        };
+    }
+    if (behavior.open) |f| {
+        b.open = switch (app.ssl) {
+            inline else => |ssl| openWrapper(ssl, f),
+        };
+    }
+    if (behavior.message) |f| {
+        b.message = switch (app.ssl) {
+            inline else => |ssl| messageWrapper(ssl, f),
+        };
+    }
+    if (behavior.dropped) |f| {
+        b.dropped = switch (app.ssl) {
+            inline else => |ssl| messageWrapper(ssl, f),
+        };
+    }
+    if (behavior.drain) |f| {
+        b.drain = switch (app.ssl) {
+            inline else => |ssl| drainWrapper(ssl, f),
+        };
+    }
+    if (behavior.ping) |f| {
+        b.ping = switch (app.ssl) {
+            inline else => |ssl| pingWrapper(ssl, f),
+        };
+    }
+    if (behavior.pong) |f| {
+        b.pong = switch (app.ssl) {
+            inline else => |ssl| pingWrapper(ssl, f),
+        };
+    }
+    if (behavior.close) |f| {
+        b.close = switch (app.ssl) {
+            inline else => |ssl| closeWrapper(ssl, f),
+        };
+    }
+    if (behavior.subscription) |f| {
+        b.subscription = switch (app.ssl) {
+            inline else => |ssl| subscriptionWrapper(ssl, f),
+        };
+    }
 
-    c.uws_ws(app.ptr, pattern, b);
+    switch (app.ssl) {
+        .ssl => c.uws_ws_ssl(app.ptr, pattern, b),
+        .none => c.uws_ws(app.ptr, pattern, b),
+    }
     return app;
 }
 
-fn handlerWrapper(handler: MethodHandler) fn (rawRes: ?*c.uws_res_s, rawReq: ?*c.uws_req_s) callconv(.c) void {
+fn handlerWrapper(comptime ssl: SSL, handler: MethodHandler) fn (rawRes: ?*c.uws_res_s, rawReq: ?*c.uws_req_s) callconv(.c) void {
     return struct {
         fn handlerWrapper(rawRes: ?*c.uws_res_s, rawReq: ?*c.uws_req_s) callconv(.c) void {
-            var res = Response{ .ptr = rawRes orelse return };
+            var res = Response{ .ptr = rawRes orelse return, .ssl = ssl };
             var req = Request{ .ptr = rawReq orelse return };
             handler(&res, &req);
         }
@@ -172,14 +259,14 @@ pub const WebSocketBehavior = struct {
     subscription: ?*const fn (ws: *WebSocket, topic: [:0]const u8, newNumberOfSubscribers: i32, oldNumberOfSubscribers: i32) void = null,
 };
 
-fn upgradeWrapper(handler: *const fn (res: *Response, req: *Request) void) fn (
+fn upgradeWrapper(comptime ssl: SSL, handler: *const fn (res: *Response, req: *Request) void) fn (
     rawRes: ?*c.uws_res_s,
     rawReq: ?*c.uws_req_t,
     context: ?*c.uws_socket_context_t,
 ) callconv(.c) void {
     return struct {
         fn upgradeHandler(rawRes: ?*c.uws_res_s, rawReq: ?*c.uws_req_t, context: ?*c.uws_socket_context_t) callconv(.c) void {
-            var res = Response{ .ptr = rawRes orelse return };
+            var res = Response{ .ptr = rawRes orelse return, .ssl = ssl };
             var req = Request{ .ptr = rawReq orelse return };
             handler(&res, &req);
             res.upgrade(&req, context);
@@ -187,25 +274,25 @@ fn upgradeWrapper(handler: *const fn (res: *Response, req: *Request) void) fn (
     }.upgradeHandler;
 }
 
-fn openWrapper(handler: *const fn (ws: *WebSocket) void) fn (rawWs: ?*c.uws_websocket_t) callconv(.c) void {
+fn openWrapper(comptime ssl: SSL, handler: *const fn (ws: *WebSocket) void) fn (rawWs: ?*c.uws_websocket_t) callconv(.c) void {
     return struct {
         fn openHandler(rawWs: ?*c.uws_websocket_t) callconv(.c) void {
-            var w_s = WebSocket{ .ptr = rawWs orelse return };
+            var w_s = WebSocket{ .ptr = rawWs orelse return, .ssl = ssl };
             handler(&w_s);
         }
     }.openHandler;
 }
 
-fn drainWrapper(handler: *const fn (ws: *WebSocket) void) fn (rawWs: ?*c.uws_websocket_t) callconv(.c) void {
+fn drainWrapper(comptime ssl: SSL, handler: *const fn (ws: *WebSocket) void) fn (rawWs: ?*c.uws_websocket_t) callconv(.c) void {
     return struct {
         fn drainHandler(rawWs: ?*c.uws_websocket_t) callconv(.c) void {
-            var w_s = WebSocket{ .ptr = rawWs orelse return };
+            var w_s = WebSocket{ .ptr = rawWs orelse return, .ssl = ssl };
             handler(&w_s);
         }
     }.drainHandler;
 }
 
-fn messageWrapper(handler: *const fn (ws: *WebSocket, message: [:0]const u8, opcode: WebSocket.Opcode) void) fn (
+fn messageWrapper(comptime ssl: SSL, handler: *const fn (ws: *WebSocket, message: [:0]const u8, opcode: WebSocket.Opcode) void) fn (
     rawWs: ?*c.uws_websocket_t,
     message: [*c]const u8,
     length: usize,
@@ -213,22 +300,22 @@ fn messageWrapper(handler: *const fn (ws: *WebSocket, message: [:0]const u8, opc
 ) callconv(.c) void {
     return struct {
         fn messageHandler(rawWs: ?*c.uws_websocket_t, message: [*c]const u8, length: usize, opcode: c.uws_opcode_t) callconv(.c) void {
-            var w_s = WebSocket{ .ptr = rawWs orelse return };
+            var w_s = WebSocket{ .ptr = rawWs orelse return, .ssl = ssl };
             handler(&w_s, message[0..length :0], @enumFromInt(opcode));
         }
     }.messageHandler;
 }
 
-fn pingWrapper(handler: *const fn (ws: *WebSocket, message: [:0]const u8) void) fn (rawWs: ?*c.uws_websocket_t, message: [*c]const u8, length: usize) callconv(.c) void {
+fn pingWrapper(comptime ssl: SSL, handler: *const fn (ws: *WebSocket, message: [:0]const u8) void) fn (rawWs: ?*c.uws_websocket_t, message: [*c]const u8, length: usize) callconv(.c) void {
     return struct {
         fn pingHandler(rawWs: ?*c.uws_websocket_t, message: [*c]const u8, length: usize) callconv(.c) void {
-            var w_s = WebSocket{ .ptr = rawWs orelse return };
+            var w_s = WebSocket{ .ptr = rawWs orelse return, .ssl = ssl };
             handler(&w_s, message[0..length :0]);
         }
     }.pingHandler;
 }
 
-fn closeWrapper(handler: *const fn (ws: *WebSocket, code: i32, message: [:0]const u8) void) fn (
+fn closeWrapper(comptime ssl: SSL, handler: *const fn (ws: *WebSocket, code: i32, message: [:0]const u8) void) fn (
     rawWs: ?*c.uws_websocket_t,
     code: c_int,
     message: [*c]const u8,
@@ -236,13 +323,13 @@ fn closeWrapper(handler: *const fn (ws: *WebSocket, code: i32, message: [:0]cons
 ) callconv(.c) void {
     return struct {
         fn closeHandler(rawWs: ?*c.uws_websocket_t, code: c_int, message: [*c]const u8, length: usize) callconv(.c) void {
-            var w_s = WebSocket{ .ptr = rawWs orelse return };
+            var w_s = WebSocket{ .ptr = rawWs orelse return, .ssl = ssl };
             handler(&w_s, code, message[0..length :0]);
         }
     }.closeHandler;
 }
 
-fn subscriptionWrapper(handler: *const fn (ws: *WebSocket, topic: [:0]const u8, newNumberOfSubscribers: i32, oldNumberOfSubscribers: i32) void) fn (
+fn subscriptionWrapper(comptime ssl: SSL, handler: *const fn (ws: *WebSocket, topic: [:0]const u8, newNumberOfSubscribers: i32, oldNumberOfSubscribers: i32) void) fn (
     rawWs: ?*c.uws_websocket_t,
     topic_name: [*c]const u8,
     topic_name_length: usize,
@@ -257,7 +344,7 @@ fn subscriptionWrapper(handler: *const fn (ws: *WebSocket, topic: [:0]const u8, 
             new_number_of_subscriber: c_int,
             old_number_of_subscriber: c_int,
         ) callconv(.c) void {
-            var w_s = WebSocket{ .ptr = rawWs orelse return };
+            var w_s = WebSocket{ .ptr = rawWs orelse return, .ssl = ssl };
             handler(&w_s, topic_name[0..topic_name_length :0], new_number_of_subscriber, old_number_of_subscriber);
         }
     }.subscriptionHandler;
@@ -268,14 +355,31 @@ fn subscriptionWrapper(handler: *const fn (ws: *WebSocket, topic: [:0]const u8, 
 fn CreateMethodFn(comptime method: [:0]const u8, comptime useWrapper: bool) type {
     var temp_up: [8]u8 = undefined;
     const upper_method = std.ascii.upperString(&temp_up, method);
-    const log_str = std.fmt.comptimePrint(if (useWrapper) "Registering {s} route: " else "Registering raw {s} route: ", .{upper_method}) ++ "{s}";
+    const log_str = std.fmt.comptimePrint(
+        if (useWrapper) "Registering {s} route: " else "Registering raw {s} route: ",
+        .{upper_method},
+    ) ++ "{s}";
 
+    const ssl_method = std.fmt.comptimePrint("uws_app_{s}_ssl", .{method});
+    const raw_method = std.fmt.comptimePrint("uws_app_{s}", .{method});
     return if (useWrapper) struct {
         fn f(app: *const App, pattern: [:0]const u8, comptime handler: MethodHandler) *const App {
             if (config.debug_logs) {
                 info(log_str, .{pattern});
             }
-            @field(c, std.fmt.comptimePrint("uws_app_{s}", .{method}))(app.ptr, pattern, handlerWrapper(handler));
+
+            switch (app.ssl) {
+                .ssl => {
+                    const method_f = @field(c, ssl_method);
+                    const handler_wrapper = handlerWrapper(.ssl, handler);
+                    method_f(app.ptr, pattern, handler_wrapper);
+                },
+                .none => {
+                    const method_f = @field(c, raw_method);
+                    const handler_wrapper = handlerWrapper(.none, handler);
+                    method_f(app.ptr, pattern, handler_wrapper);
+                },
+            }
             return app;
         }
     } else struct {
@@ -283,7 +387,16 @@ fn CreateMethodFn(comptime method: [:0]const u8, comptime useWrapper: bool) type
             if (config.debug_logs) {
                 info(log_str, .{pattern});
             }
-            @field(c, std.fmt.comptimePrint("uws_app_{s}", .{method}))(app.ptr, pattern, handler);
+            switch (app.ssl) {
+                .ssl => {
+                    const method_f = @field(c, ssl_method);
+                    method_f(app.ptr, pattern, handler);
+                },
+                .none => {
+                    const method_f = @field(c, raw_method);
+                    method_f(app.ptr, pattern, handler);
+                },
+            }
         }
     };
 }

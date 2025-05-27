@@ -19,6 +19,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    const boringssl_dep = b.dependency("boringssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const usockets_dep = b.dependency("uSockets", .{});
     const uwebsockets_dep = b.dependency("uWebSockets", .{});
 
@@ -27,11 +32,16 @@ pub fn build(b: *std.Build) !void {
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
+            .link_libcpp = target.result.abi != .msvc,
         }),
     });
 
     uSockets.linkLibrary(zlib_dep.artifact("z"));
     uSockets.linkLibrary(libuv_dep.artifact("uv"));
+    const ssl = boringssl_dep.artifact("ssl");
+    uSockets.linkLibrary(ssl);
+    uSockets.installLibraryHeaders(ssl);
     uSockets.addIncludePath(usockets_dep.path("src"));
     uSockets.installHeader(usockets_dep.path("src/libusockets.h"), "libusockets.h");
     uSockets.addCSourceFiles(.{
@@ -43,7 +53,7 @@ pub fn build(b: *std.Build) !void {
             "quic.c",
             "socket.c",
             "udp.c",
-            "crypto/sni_tree.cpp",
+            "crypto/openssl.c",
             "eventing/epoll_kqueue.c",
             "eventing/gcd.c",
             "eventing/libuv.c",
@@ -51,7 +61,18 @@ pub fn build(b: *std.Build) !void {
             "io_uring/io_loop.c",
             "io_uring/io_socket.c",
         },
-        .flags = &.{"-DLIBUS_NO_SSL"},
+        .flags = &.{
+            "-DLIBUS_USE_OPENSSL=1",
+            "-DWIN32_LEAN_AND_MEAN",
+        },
+    });
+    uSockets.addCSourceFiles(.{
+        .root = usockets_dep.path("src"),
+        .files = &.{
+            "crypto/sni_tree.cpp",
+        },
+        .flags = &.{ "-std=c++17", "-DLIBUS_USE_OPENSSL=1" },
+        .language = .cpp,
     });
     b.installArtifact(uSockets);
 
@@ -69,7 +90,7 @@ pub fn build(b: *std.Build) !void {
     uWebSockets.addIncludePath(uwebsockets_dep.path("src"));
     uWebSockets.addCSourceFiles(.{
         .root = b.path("bindings/"),
-        .files = &.{"uws.cpp"},
+        .files = &.{ "uws.cpp", "app_raw.cpp", "app_ssl.cpp" },
     });
     b.installArtifact(uWebSockets);
 
@@ -131,6 +152,7 @@ fn addExample(
     exe.root_module.addImport("zuws", zuws);
 
     const run_cmd = b.addRunArtifact(exe);
+    run_cmd.setCwd(b.path("."));
 
     const example_step = b.step(
         try std.fmt.allocPrint(b.allocator, "example-{s}", .{example_name}),
@@ -142,6 +164,7 @@ fn addExample(
         try std.fmt.allocPrint(b.allocator, "example-{s}-asm", .{example_name}),
         try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name}),
     );
+    b.installArtifact(exe);
 
     const asm_description = try std.fmt.allocPrint(b.allocator, "Emit the {s} example ASM file", .{example_name});
     const asm_step_name = try std.fmt.allocPrint(b.allocator, "{s}-asm", .{example_name});

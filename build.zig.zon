@@ -2,6 +2,7 @@
     .fingerprint = 0xde8efae815fc7f4e,
     .name = .zuws,
     .version = "0.1.0",
+    .minimum_zig_version = "0.15.0-dev.483+837e0f9c3",
     .dependencies = .{
         .zlib = .{
             .url = "https://github.com/allyourcodebase/zlib/archive/refs/tags/1.3.1.tar.gz",
@@ -18,6 +19,10 @@
         .libuv = .{
             .url = "git+https://github.com/allyourcodebase/libuv.git#fead2457be2e93c5b1383f4648c76454eacdb6dc",
             .hash = "libuv-1.5.0-htqqv2phAADl1d0iTPAVBelr99ZHJntXVYKkVCVarY6N",
+        },
+        .boringssl = .{
+            .url = "git+https://github.com/lodinukal/boringssl-zig#baa61ee29183802d7b2f81d504a1d5d86728378a",
+            .hash = "N-V-__8AACehEgdcR-xplptAEHyPTB2Lm3k_EewiuLnKrWpH",
         },
     },
     .paths = .{

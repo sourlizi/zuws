@@ -1,13 +1,13 @@
 # zuws
 
-Opinionated zig bindings for [`uWebsockets`](https://github.com/uNetworking/uWebSockets).
+Opinionated zig bindings for [`uWebsockets`](https://github.com/uNetworking/uWebSockets). Now with SSL support through boringssl.
 
 # Installation
 
 `zuws` is available using the `zig fetch` command.
 
 ```sh
-zig fetch --save git+https://github.com/harmony-co/zuws
+zig fetch --save git+https://github.com/lodinukal/zuws
 ```
 
 To add it to your project, after running the command above add the following to your `build.zig` file:
@@ -42,6 +42,32 @@ const Response = uws.Response;
 
 pub fn main() !void {
     const app: App = try .init();
+    defer app.deinit();
+
+    try app.get("/hello", hello)
+        .listen(3000, null);
+}
+
+fn hello(res: *Response, req: *Request) void {
+    _ = req;
+    const str = "Hello World!\n";
+    res.end(str, false);
+}
+```
+
+
+```zig
+const uws = @import("zuws");
+const App = uws.App;
+const Request = uws.Request;
+const Response = uws.Response;
+
+pub fn main() !void {
+    const app: App = try .initSSL(.{
+        .cert_file_name = "path/to/cert.pem",
+        .key_file_name = "path/to/key.pem",
+        .passphrase = "your_passphrase", // Optional, if your key is encrypted
+    });
     defer app.deinit();
 
     try app.get("/hello", hello)

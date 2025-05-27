@@ -1,6 +1,17 @@
 {
   "configurations": [
     {
+      "name": "(Windows) Launch Hello World Example",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/zig-out/bin/hello-world",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "externalTerminal"
+    },
+    {
       "name": "(lldb) Launch - Debug",
       "type": "lldb",
       "request": "launch",
