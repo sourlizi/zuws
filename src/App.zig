@@ -76,8 +76,8 @@ pub fn deinit(app: *const App) void {
 }
 
 /// This also calls `run` and starts the app
-pub fn listen(app: *const App, port: u16, handler: ?ListenHandler) !void {
-    const addr = try std.net.Address.parseIp4("127.0.0.1", port);
+pub fn listen(app: *const App, host: []const u8, port: u16, handler: ?ListenHandler) !void {
+    const addr = try std.net.Address.parseIp4(host, port);
     const sock_fd = try std.posix.socket(addr.any.family, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, std.posix.IPPROTO.TCP);
     try std.posix.bind(sock_fd, &addr.any, addr.getOsSockLen());
     std.posix.close(sock_fd);
