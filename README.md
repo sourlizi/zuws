@@ -7,7 +7,7 @@ Opinionated zig bindings for [`uWebsockets`](https://github.com/uNetworking/uWeb
 `zuws` is available using the `zig fetch` command.
 
 ```sh
-zig fetch --save git+https://github.com/lodinukal/zuws
+zig fetch --save git+https://github.com/sourlizi/zuws
 ```
 
 To add it to your project, after running the command above add the following to your `build.zig` file:
