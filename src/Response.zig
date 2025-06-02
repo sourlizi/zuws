@@ -55,15 +55,15 @@ pub fn writeContinue(res: *const Response) void {
 
 pub fn writeStatus(res: *const Response, status: []const u8) void {
     switch (res.ssl) {
-        .ssl => c.uws_res_write_status_ssl(res.ptr, status, status.len),
-        .none => c.uws_res_write_status(res.ptr, status, status.len),
+        .ssl => c.uws_res_write_status_ssl(res.ptr, @ptrCast(status), status.len),
+        .none => c.uws_res_write_status(res.ptr, @ptrCast(status), status.len),
     }
 }
 
 pub fn writeHeader(res: *const Response, key: []const u8, value: []const u8) void {
     switch (res.ssl) {
-        .ssl => c.uws_res_write_header_ssl(res.ptr, key, key.len, value, value.len),
-        .none => c.uws_res_write_header(res.ptr, key, key.len, value, value.len),
+        .ssl => c.uws_res_write_header_ssl(res.ptr, @ptrCast(key), key.len, @ptrCast(value), value.len),
+        .none => c.uws_res_write_header(res.ptr, @ptrCast(key), key.len, @ptrCast(value), value.len),
     }
 }
 
